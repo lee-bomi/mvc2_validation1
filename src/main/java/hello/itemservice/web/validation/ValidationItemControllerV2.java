@@ -10,6 +10,8 @@ import org.springframework.util.StringUtils;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.validation.ObjectError;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.WebDataBinder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
@@ -24,6 +26,12 @@ import java.util.Map;
 public class ValidationItemControllerV2 {
 
     private final ItemRepository itemRepository;
+    private final ItemValidator itemValidator;
+
+    @InitBinder
+    public void init(WebDataBinder dataBinder) {    //깊이있게 알 필요는 없음
+        dataBinder.addValidators(itemValidator);
+    }
 
     @GetMapping
     public String items(Model model) {
@@ -88,10 +96,10 @@ public class ValidationItemControllerV2 {
             bindingResult.addError(new FieldError("item", "itemName", item.getItemName(), false, null, null, "상품 이름은 필수입니다"));
         }
         if (item.getPrice() == null || item.getPrice() < 1000 || item.getPrice() > 1000000) {
-            bindingResult.addError(new FieldError("price", "price", item.getPrice(), false, null, null, "상품가격은 1,000 ~ 1,000,000원까지 허용합니다"));
+            bindingResult.addError(new FieldError("item", "price", item.getPrice(), false, null, null, "상품가격은 1,000 ~ 1,000,000원까지 허용합니다"));
         }
         if (item.getQuantity() == null || item.getQuantity() >= 9999) {
-            bindingResult.addError(new FieldError("quantity", "quantity", item.getQuantity(), false, null, null, "수량은 최대 9,999개 까지 허용합니다"));
+            bindingResult.addError(new FieldError("item", "quantity", item.getQuantity(), false, null, null, "수량은 최대 9,999개 까지 허용합니다"));
         }
 
         //특정필드가 아닌 복합 룰 검증
@@ -123,10 +131,10 @@ public class ValidationItemControllerV2 {
             bindingResult.addError(new FieldError("item", "itemName", item.getItemName(), false, new String[]{"required.item.itemName"}, null, null));
         }
         if (item.getPrice() == null || item.getPrice() < 1000 || item.getPrice() > 1000000) {
-            bindingResult.addError(new FieldError("price", "price", item.getPrice(), false, new String[]{"range.item.price"}, new Object[]{1000, 1000000}, null));
+            bindingResult.addError(new FieldError("item", "price", item.getPrice(), false, new String[]{"range.item.price"}, new Object[]{1000, 1000000}, null));
         }
         if (item.getQuantity() == null || item.getQuantity() >= 9999) {
-            bindingResult.addError(new FieldError("quantity", "quantity", item.getQuantity(), false, new String[]{"max.item.quantity"}, new Object[]{9999}, null));
+            bindingResult.addError(new FieldError("item", "quantity", item.getQuantity(), false, new String[]{"max.item.quantity"}, new Object[]{9999}, null));
         }
 
         //특정필드가 아닌 복합 룰 검증
@@ -150,7 +158,7 @@ public class ValidationItemControllerV2 {
         return "redirect:/validation/v2/items/{itemId}";
     }
 
-    @PostMapping("/add")    //FieldError의 파라미터가 너무많아
+//    @PostMapping("/add")    //rejectValue사용
     public String addItemV4(@ModelAttribute Item item, BindingResult bindingResult, RedirectAttributes redirectAttributes, Model model) {
 
         //검증로직
@@ -173,6 +181,43 @@ public class ValidationItemControllerV2 {
         }
 
         //검증에 실패하면 다시 입력 폼으로
+        if (bindingResult.hasErrors()) {
+            log.info("errors ={} ", bindingResult); //bindingResult는 자동으로 뷰에 넘어가기때문에 modelAttribute를 사용하지않아도된다
+            return "validation/v2/addForm";
+        }
+
+        //성공로직
+        Item savedItem = itemRepository.save(item);
+        redirectAttributes.addAttribute("itemId", savedItem.getId());
+        redirectAttributes.addAttribute("status", true);
+        return "redirect:/validation/v2/items/{itemId}";
+    }
+
+//    @PostMapping("/add")    //validator분리
+    public String addItemV5(@ModelAttribute Item item, BindingResult bindingResult, RedirectAttributes redirectAttributes, Model model) {
+
+        //bindingResult : 검증오류를 보관하는 객체(스프링 제공)
+        //bindingResult가 있으면 @ModelAttribute에 데이터 바인딩 시 오류가 발생해도 컨트롤러가 호출됨
+
+        itemValidator.validate(item, bindingResult);
+
+        //검증에 실패하면 다시 입력 폼으로
+        if (bindingResult.hasErrors()) {
+            log.info("errors ={} ", bindingResult); //bindingResult는 자동으로 뷰에 넘어가기때문에 modelAttribute를 사용하지않아도된다
+            return "validation/v2/addForm";
+        }
+
+        //성공로직
+        Item savedItem = itemRepository.save(item);
+        redirectAttributes.addAttribute("itemId", savedItem.getId());
+        redirectAttributes.addAttribute("status", true);
+        return "redirect:/validation/v2/items/{itemId}";
+    }
+
+    @PostMapping("/add")    //validator를 호출하는부분을 없애고, @Validated 어노테이션을 붙임
+    public String addItemV6(@Validated @ModelAttribute Item item, BindingResult bindingResult, RedirectAttributes redirectAttributes, Model model) {
+
+        //@Validator가 있으면 검증기실행하고, 에러가있으면 BindingResult에 담겨서 내려옴
         if (bindingResult.hasErrors()) {
             log.info("errors ={} ", bindingResult); //bindingResult는 자동으로 뷰에 넘어가기때문에 modelAttribute를 사용하지않아도된다
             return "validation/v2/addForm";
